@@ -1,0 +1,8 @@
+{
+    "gold": 117364,
+    "permanent_upgrades": {
+        "MAX_HP": 20,
+        "EXP_GAIN": 10,
+        "GOLD_GAIN": 10
+    }
+}
