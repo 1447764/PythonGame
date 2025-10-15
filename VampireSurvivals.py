@@ -20,7 +20,7 @@ WHITE = (255, 255, 255)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
-YELLOW = (255, 255, 0)
+YELLOW = (255, 255, 20)
 CYAN = (0, 255, 255)
 DARK_GREY = (40, 40, 40)
 LIGHT_GREY = (100, 100, 100)
@@ -31,7 +31,7 @@ UI_OPTION_BG_COLOR = (80, 80, 120)
 # 레벨업에 필요한 경험치 데이터 (초반은 쉽고 후반은 어렵게)
 LEVEL_DATA = [50, 75, 110, 150, 220, 300, 450, 600, 800, 1000, 1250, 1500]
 
-# [수정됨] 업그레이드 및 스킬 데이터 정의
+# 업그레이드 및 스킬 데이터 정의
 UPGRADE_DATA = {
     # 기본 스탯 업그레이드
     'WEAPON_DAMAGE': {'name': '마법탄 공격력 +5', 'description': '모든 마법탄의 공격력이 5 증가합니다.'},
@@ -47,10 +47,35 @@ UPGRADE_DATA = {
     'BIBLE_RANGE': {'name': '성스러운 책 범위 +15%', 'description': '책의 회전 반경이 15% 넓어집니다.'},
 }
 
+# --- [추가됨] UI 버튼 클래스 ---
+class Button:
+    def __init__(self, x, y, width, height, text, font, bg_color=UI_OPTION_BG_COLOR, border_color=UI_BORDER_COLOR):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.font = font
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.is_hovered = False
+
+    def draw(self, surface):
+        color = tuple(min(c + 30, 255) for c in self.bg_color) if self.is_hovered else self.bg_color
+        pygame.draw.rect(surface, color, self.rect, border_radius=10)
+        pygame.draw.rect(surface, self.border_color, self.rect, 3, border_radius=10)
+        
+        text_surf = self.font.render(self.text, True, WHITE)
+        text_rect = text_surf.get_rect(center=self.rect.center)
+        surface.blit(text_surf, text_rect)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self.is_hovered = self.rect.collidepoint(event.pos)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.is_hovered and event.button == 1:
+                return True
+        return False
 
 # --- 카메라 클래스 ---
 class Camera:
-    # ... 기존 코드와 동일 ...
     def __init__(self, world_width, world_height):
         self.rect = pygame.Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
         self.world_width = world_width
@@ -79,19 +104,14 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.pos = pygame.math.Vector2(WORLD_WIDTH / 2, WORLD_HEIGHT / 2)
         self.rect.center = self.pos
-        
-        # 기본 스탯
         self.base_speed = 5
         self.base_max_hp = 100
         self.base_weapon_cooldown = 500
         self.base_weapon_damage = 10
         self.base_projectile_speed = 10
-
-        # 스킬을 관리할 그룹
         self.bible_sprites = pygame.sprite.Group()
 
     def reset(self):
-        """ 플레이어 스탯을 초기화합니다. """
         self.pos.x, self.pos.y = WORLD_WIDTH / 2, WORLD_HEIGHT / 2
         self.speed = self.base_speed
         self.max_hp = self.base_max_hp
@@ -103,17 +123,12 @@ class Player(pygame.sprite.Sprite):
         self.exp = 0
         self.exp_to_next_level = LEVEL_DATA[0]
         self.invincible = False
-        self.skills = {} # 획득한 스킬 정보
+        self.skills = {}
         self.last_shot_time = 0
-        
-        # [수정됨] 누락된 변수들을 reset 시점에 초기화합니다.
         self.invincible_duration = 1000
         self.last_hit_time = 0
-
-        # 리셋 시 기존 스킬 오브젝트 모두 제거
         for bible in self.bible_sprites:
             bible.kill()
-
 
     def gain_exp(self, amount):
         self.exp += amount
@@ -129,13 +144,10 @@ class Player(pygame.sprite.Sprite):
             self.exp_to_next_level = float('inf')
         self.game.generate_upgrades() 
         self.game.game_state = 'LEVEL_UP'
-        print(f"레벨 업! 현재 레벨: {self.level}")
 
     def create_bibles(self):
-        """ 현재 스탯에 맞춰 성스러운 책 오브젝트를 생성/재생성합니다. """
         for sprite in self.bible_sprites:
             sprite.kill()
-        
         if 'bible' in self.skills:
             stats = self.skills['bible']
             count = stats['count']
@@ -145,7 +157,7 @@ class Player(pygame.sprite.Sprite):
                 bible.angle = i * angle_step
                 self.bible_sprites.add(bible)
                 self.game.all_sprites.add(bible)
-                self.game.skill_sprites.add(bible) # 충돌 감지를 위한 그룹에 추가
+                self.game.skill_sprites.add(bible)
 
     def fire_weapon(self):
         now = pygame.time.get_ticks()
@@ -178,23 +190,17 @@ class Player(pygame.sprite.Sprite):
         if self.invincible:
             if pygame.time.get_ticks() - self.last_hit_time > self.invincible_duration:
                 self.invincible = False
-        
         vel = pygame.math.Vector2(0, 0)
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT] or keys[pygame.K_a]: vel.x = -1
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]: vel.x = 1
         if keys[pygame.K_UP] or keys[pygame.K_w]: vel.y = -1
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: vel.y = 1
-        
         if vel.length() > 0:
             vel.normalize_ip()
             self.pos += vel * self.speed
-        
-        if self.pos.x < 0: self.pos.x = 0
-        if self.pos.x > WORLD_WIDTH: self.pos.x = WORLD_WIDTH
-        if self.pos.y < 0: self.pos.y = 0
-        if self.pos.y > WORLD_HEIGHT: self.pos.y = WORLD_HEIGHT
-
+        self.pos.x = max(0, min(self.pos.x, WORLD_WIDTH))
+        self.pos.y = max(0, min(self.pos.y, WORLD_HEIGHT))
         self.rect.center = self.pos
         self.fire_weapon()
 
@@ -219,21 +225,20 @@ class Enemy(pygame.sprite.Sprite):
         self.image.fill(RED)
         self.rect = self.image.get_rect()
         self.pos = pygame.math.Vector2(0, 0)
-        self.speed = random.randint(1,2)
+        self.speed = random.randint(1, 2)
         self.max_hp = 20
         self.hp = self.max_hp
         self.exp_drop = 15
         self.damage = 5
-        # 스킬 피격 쿨다운
         self.last_skill_hit_time = 0
-        self.skill_hit_cooldown = 500 # 0.5초
+        self.skill_hit_cooldown = 500
 
     def reset(self, pos):
         self.pos = pygame.math.Vector2(pos)
         self.rect.center = self.pos
         self.hp = self.max_hp
-        self.speed = random.randint(1,2)
-        self.last_skill_hit_time = 0 # 쿨다운 초기화
+        self.speed = random.randint(1, 2)
+        self.last_skill_hit_time = 0
         self.game.all_sprites.add(self)
         self.game.enemies.add(self)
 
@@ -255,16 +260,14 @@ class Enemy(pygame.sprite.Sprite):
                 if dist_to_other < 40:
                     separation_vec += self.pos - other.pos
                     close_enemies_count += 1
-        
+        final_vec = pygame.math.Vector2(0, 0)
         if attraction_vec.length() > 40:
             final_vec = attraction_vec.normalize()
-            if close_enemies_count > 0:
+            if close_enemies_count > 0 and separation_vec.length() > 0:
                 final_vec = final_vec * 0.7 + separation_vec.normalize() * 0.3
-        
-            if final_vec.length() > 0:
-                 final_vec.normalize_ip()
-                 self.pos += final_vec * self.speed
-        
+        if final_vec.length() > 0:
+            final_vec.normalize_ip()
+            self.pos += final_vec * self.speed
         self.rect.center = self.pos
 
 
@@ -290,10 +293,8 @@ class Projectile(pygame.sprite.Sprite):
         self.damage = self.game.player.weapon_damage
         self.lifespan = 2000
         self.spawn_time = pygame.time.get_ticks()
-        
         direction = (target_enemy.pos - self.pos).normalize()
         self.vel = direction * self.speed
-        
         self.game.all_sprites.add(self)
         self.game.projectiles.add(self)
 
@@ -303,7 +304,7 @@ class Projectile(pygame.sprite.Sprite):
         if pygame.time.get_ticks() - self.spawn_time > self.lifespan:
             self.kill()
 
-# --- [추가됨] 성스러운 책 스킬 클래스 ---
+# --- 성스러운 책 스킬 클래스 ---
 class Bible(pygame.sprite.Sprite):
     def __init__(self, game):
         super().__init__()
@@ -312,8 +313,6 @@ class Bible(pygame.sprite.Sprite):
         self.image.fill(CYAN)
         self.rect = self.image.get_rect()
         self.pos = pygame.math.Vector2(0, 0)
-        
-        # 플레이어의 스킬 정보로부터 스탯 가져오기
         self.stats = self.game.player.skills['bible']
         self.angle = 0
         self.rotation_speed = self.stats.get('speed', 2)
@@ -331,21 +330,35 @@ class Bible(pygame.sprite.Sprite):
 class Game:
     def __init__(self):
         pygame.init()
-        pygame.display.set_caption("Vampire Survivors Clone")
+        pygame.display.set_caption("Vampire Survivors")
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.is_running = True
         font_path = "GmarketSansTTF/GmarketSansTTFMedium.ttf"
-        self.font = pygame.font.Font(font_path, 72)
+        self.title_font = pygame.font.Font(font_path, 96)
+        self.header_font = pygame.font.Font(font_path, 72)
         self.ui_font = pygame.font.Font(font_path, 36)
         self.upgrade_font = pygame.font.Font(font_path, 28)
-        self.game_state = 'PLAYING'
+        
+        # [수정됨] 게임 상태를 START_MENU에서 시작
+        self.game_state = 'START_MENU' 
         
         self.current_upgrade_options = []
         self.upgrade_option_rects = []
 
+        # [추가됨] 골드 (임시)
+        self.gold = 1234
+        
+        # [추가됨] 시작 메뉴 버튼
+        button_width, button_height = 250, 60
+        button_x = SCREEN_WIDTH / 2 - button_width / 2
+        self.start_button = Button(button_x, 300, button_width, button_height, '게임 시작', self.ui_font)
+        self.credits_button = Button(button_x, 400, button_width, button_height, '제작진', self.ui_font)
+        self.quit_button = Button(button_x, 500, button_width, button_height, '나가기', self.ui_font)
+        self.back_button = Button(button_x, 600, button_width, button_height, '뒤로 가기', self.ui_font)
+
+
     def run(self):
-        self.new_game()
         while self.is_running:
             self.clock.tick(FPS)
             self.handle_events()
@@ -358,76 +371,55 @@ class Game:
         self.enemies = pygame.sprite.Group()
         self.projectiles = pygame.sprite.Group()
         self.exp_gems = pygame.sprite.Group()
-        self.skill_sprites = pygame.sprite.Group() # 스킬 충돌 감지용 그룹
+        self.skill_sprites = pygame.sprite.Group()
         self.enemy_pool = []
         self.spawn_timer = 0
         self.spawn_interval = 500
         self.game_state = 'PLAYING'
-        
         self.game_start_time = pygame.time.get_ticks()
         self.paused_time = 0
-        
         if not hasattr(self, 'player'):
             self.player = Player(self)
         self.player.reset()
         self.all_sprites.add(self.player)
-
         self.camera = Camera(WORLD_WIDTH, WORLD_HEIGHT)
         self.background_image = self.create_background()
         self.background_rect = self.background_image.get_rect()
 
     def generate_upgrades(self):
-        """ [수정됨] 획득한 스킬에 따라 업그레이드 선택지를 동적으로 생성합니다. """
         upgrade_pool = list(UPGRADE_DATA.keys())
-        
         available_upgrades = []
         for key in upgrade_pool:
             if key.startswith('BIBLE_'):
-                if 'bible' in self.player.skills: # 성경 스킬을 보유하고 있을 때만
+                if 'bible' in self.player.skills:
                     available_upgrades.append(key)
             elif key == 'ACQUIRE_BIBLE':
-                if 'bible' not in self.player.skills: # 성경 스킬이 없을 때만
+                if 'bible' not in self.player.skills:
                     available_upgrades.append(key)
-            else: # 기본 스탯 업그레이드는 항상 가능
+            else:
                 available_upgrades.append(key)
-        
         sample_size = min(3, len(available_upgrades))
         self.current_upgrade_options = random.sample(available_upgrades, sample_size)
         self.paused_time = pygame.time.get_ticks()
 
-
     def apply_upgrade(self, upgrade_key):
-        """ [수정됨] 스킬 획득 및 업그레이드 로직을 추가합니다. """
-        print(f"업그레이드 적용: {upgrade_key}")
-        # 기본 스탯
-        if upgrade_key == 'WEAPON_DAMAGE':
-            self.player.weapon_damage += 5
-        elif upgrade_key == 'WEAPON_COOLDOWN':
-            self.player.weapon_cooldown *= 0.9 
-        elif upgrade_key == 'PLAYER_SPEED':
-            self.player.speed += 0.5
-        elif upgrade_key == 'MAX_HP':
-            self.player.max_hp += 20
-        elif upgrade_key == 'PROJECTILE_SPEED':
-            self.player.projectile_speed += 1
-        # 스킬 관련
+        if upgrade_key == 'WEAPON_DAMAGE': self.player.weapon_damage += 5
+        elif upgrade_key == 'WEAPON_COOLDOWN': self.player.weapon_cooldown *= 0.9 
+        elif upgrade_key == 'PLAYER_SPEED': self.player.speed += 0.5
+        elif upgrade_key == 'MAX_HP': self.player.max_hp += 20
+        elif upgrade_key == 'PROJECTILE_SPEED': self.player.projectile_speed += 1
         elif upgrade_key == 'ACQUIRE_BIBLE':
-            self.player.skills['bible'] = {
-                'damage': 15, 'count': 1, 'range': 100, 'speed': 2
-            }
+            self.player.skills['bible'] = {'damage': 15, 'count': 1, 'range': 100, 'speed': 2}
             self.player.create_bibles()
-        elif upgrade_key == 'BIBLE_DAMAGE':
-            self.player.skills['bible']['damage'] += 8
+        elif upgrade_key == 'BIBLE_DAMAGE': self.player.skills['bible']['damage'] += 8
         elif upgrade_key == 'BIBLE_COUNT':
             self.player.skills['bible']['count'] += 1
-            self.player.create_bibles() # 개수가 바뀌었으니 다시 생성
+            self.player.create_bibles()
         elif upgrade_key == 'BIBLE_RANGE':
-            self.player.skills['bible']['range'] *= 1.15 # 15% 증가
-            self.player.create_bibles() # 범위가 바뀌었으니 다시 생성
-        
+            self.player.skills['bible']['range'] *= 1.15
+            self.player.create_bibles()
         pause_duration = pygame.time.get_ticks() - self.paused_time
         self.game_start_time += pause_duration
-
 
     def return_enemy_to_pool(self, enemy):
         enemy.kill()
@@ -444,90 +436,119 @@ class Game:
                 y = self.player.pos.y + math.sin(angle) * distance
                 x = max(0, min(x, WORLD_WIDTH))
                 y = max(0, min(y, WORLD_HEIGHT))
-                if self.enemy_pool:
-                    enemy = self.enemy_pool.pop()
-                else:
-                    enemy = Enemy(self)
+                enemy = self.enemy_pool.pop() if self.enemy_pool else Enemy(self)
                 enemy.reset((x, y))
 
     def create_background(self):
         background = pygame.Surface((WORLD_WIDTH, WORLD_HEIGHT))
         background.fill(DARK_GREY)
         tile_size = 100
-        for x in range(0, WORLD_WIDTH, tile_size):
-            pygame.draw.line(background, LIGHT_GREY, (x, 0), (x, WORLD_HEIGHT))
-        for y in range(0, WORLD_HEIGHT, tile_size):
-            pygame.draw.line(background, LIGHT_GREY, (0, y), (WORLD_WIDTH, y))
+        for x in range(0, WORLD_WIDTH, tile_size): pygame.draw.line(background, LIGHT_GREY, (x, 0), (x, WORLD_HEIGHT))
+        for y in range(0, WORLD_HEIGHT, tile_size): pygame.draw.line(background, LIGHT_GREY, (0, y), (WORLD_WIDTH, y))
         return background
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.is_running = False
-            if event.type == pygame.KEYDOWN:
-                if self.game_state == 'GAME_OVER' and event.key == pygame.K_r:
-                    self.new_game()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.game_state == 'LEVEL_UP' and event.button == 1:
+            
+            if self.game_state == 'START_MENU':
+                if self.start_button.handle_event(event): self.new_game()
+                if self.credits_button.handle_event(event): self.game_state = 'CREDITS'
+                if self.quit_button.handle_event(event): self.is_running = False
+            
+            elif self.game_state == 'CREDITS':
+                if self.back_button.handle_event(event): self.game_state = 'START_MENU'
+
+            elif self.game_state == 'GAME_OVER':
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_r: self.new_game()
+
+            elif self.game_state == 'LEVEL_UP':
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     for i, rect in enumerate(self.upgrade_option_rects):
                         if rect.collidepoint(event.pos):
                             self.apply_upgrade(self.current_upgrade_options[i])
                             self.game_state = 'PLAYING'
                             break
-
+    
     def update(self):
         if self.game_state == 'PLAYING':
             self.all_sprites.update()
             self.camera.update(self.player)
             self.manage_enemy_spawning()
-
-            # 투사체 vs 적
+            # ... (충돌 감지 로직은 기존과 동일) ...
             hits = pygame.sprite.groupcollide(self.enemies, self.projectiles, False, True)
             for enemy, projectiles_hit in hits.items():
                 for proj in projectiles_hit:
-                    gem_pos = enemy.take_damage(proj.damage)
-                    if gem_pos:
+                    if gem_pos := enemy.take_damage(proj.damage):
                         gem = ExpGem(gem_pos, enemy.exp_drop)
                         self.all_sprites.add(gem)
                         self.exp_gems.add(gem)
-            
-            # 플레이어 vs 적
             if not self.player.invincible:
-                colliding_enemies = pygame.sprite.spritecollide(self.player, self.enemies, False)
-                if colliding_enemies:
+                if colliding_enemies := pygame.sprite.spritecollide(self.player, self.enemies, False):
                     self.player.take_damage(colliding_enemies[0].damage)
-            
-            # 플레이어 vs 경험치 보석
             gems_collected = pygame.sprite.spritecollide(self.player, self.exp_gems, True)
             for gem in gems_collected:
                 self.player.gain_exp(gem.exp_value)
-
-            # [추가됨] 스킬 vs 적
             skill_hits = pygame.sprite.groupcollide(self.enemies, self.skill_sprites, False, False)
             for enemy, skills_hit in skill_hits.items():
                 now = pygame.time.get_ticks()
                 if now - enemy.last_skill_hit_time > enemy.skill_hit_cooldown:
                     enemy.last_skill_hit_time = now
-                    # 어떤 스킬에 맞았는지 확인 (지금은 성경책 뿐이지만 추후 확장 가능)
                     if isinstance(skills_hit[0], Bible):
                         damage = self.player.skills['bible']['damage']
-                        gem_pos = enemy.take_damage(damage)
-                        if gem_pos:
+                        if gem_pos := enemy.take_damage(damage):
                             gem = ExpGem(gem_pos, enemy.exp_drop)
                             self.all_sprites.add(gem)
                             self.exp_gems.add(gem)
 
     def draw(self):
+        # [수정됨] 게임 상태에 따라 다른 화면을 그림
+        if self.game_state == 'START_MENU':
+            self.draw_start_menu()
+        elif self.game_state == 'CREDITS':
+            self.draw_credits_screen()
+        elif self.game_state in ['PLAYING', 'LEVEL_UP', 'GAME_OVER']:
+            self.draw_game_screen()
+        
+        pygame.display.flip()
+        
+    def draw_start_menu(self):
+        self.screen.fill(DARK_GREY)
+        title_text = self.title_font.render("Vampire Survivals", True, WHITE)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH/2, 150))
+        self.screen.blit(title_text, title_rect)
+        
+        self.start_button.draw(self.screen)
+        self.credits_button.draw(self.screen)
+        self.quit_button.draw(self.screen)
+        
+        gold_text = self.ui_font.render(f"소유 골드: {self.gold} G", True, YELLOW)
+        gold_rect = gold_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT - 50))
+        self.screen.blit(gold_text, gold_rect)
+
+    def draw_credits_screen(self):
+        self.screen.fill(DARK_GREY)
+        credits_text = self.header_font.render("제작진", True, WHITE)
+        credits_rect = credits_text.get_rect(center=(SCREEN_WIDTH/2, 150))
+        self.screen.blit(credits_text, credits_rect)
+        
+        creator_text = self.ui_font.render("Created by 문현아", True, WHITE)
+        creator_rect = creator_text.get_rect(center=(SCREEN_WIDTH/2, 350))
+        self.screen.blit(creator_text, creator_rect)
+        
+        self.back_button.draw(self.screen)
+
+    def draw_game_screen(self):
         self.screen.fill(DARK_GREY)
         self.screen.blit(self.background_image, self.camera.apply(self.background_rect))
         for sprite in self.all_sprites:
             self.screen.blit(sprite.image, self.camera.apply(sprite.rect))
         self.player.draw_hp_bar(self.screen, self.camera)
-        self.draw_ui()
-        pygame.display.flip()
+        self.draw_game_ui()
         
-    def draw_ui(self):
-        # EXP 바, 타이머 등 UI
+    def draw_game_ui(self):
+        # EXP 바
         exp_bar_width = SCREEN_WIDTH - 40
         exp_bar_height = 20
         exp_ratio = self.player.exp / self.player.exp_to_next_level
@@ -538,42 +559,35 @@ class Game:
         level_text = self.ui_font.render(f"LV {self.player.level}", True, WHITE)
         self.screen.blit(level_text, (30, 45))
         
-        if self.game_state == 'PLAYING':
-            elapsed_ticks = pygame.time.get_ticks() - self.game_start_time
-        else:
-            elapsed_ticks = self.paused_time - self.game_start_time
+        # 타이머
+        elapsed_ticks = self.paused_time - self.game_start_time if self.game_state != 'PLAYING' else pygame.time.get_ticks() - self.game_start_time
         elapsed_seconds = elapsed_ticks // 1000
-        minutes = elapsed_seconds // 60
-        seconds = elapsed_seconds % 60
+        minutes, seconds = divmod(elapsed_seconds, 60)
         timer_text = self.ui_font.render(f"{minutes:02}:{seconds:02}", True, WHITE)
         timer_rect = timer_text.get_rect(center=(SCREEN_WIDTH / 2, 60))
         self.screen.blit(timer_text, timer_rect)
 
+        # 레벨업 / 게임 오버 창
         if self.game_state == 'LEVEL_UP':
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 180))
             self.screen.blit(overlay, (0, 0))
-            title_text = self.font.render("LEVEL UP!", True, YELLOW)
+            title_text = self.header_font.render("LEVEL UP!", True, YELLOW)
             title_rect = title_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 5))
             self.screen.blit(title_text, title_rect)
-            
             self.upgrade_option_rects.clear()
             option_width, option_height = 500, 100
             start_y = SCREEN_HEIGHT / 2 - (option_height * 1.5 + 20)
-            
             for i, option_key in enumerate(self.current_upgrade_options):
                 option_data = UPGRADE_DATA[option_key]
                 y = start_y + i * (option_height + 20)
                 rect = pygame.Rect(SCREEN_WIDTH / 2 - option_width / 2, y, option_width, option_height)
                 self.upgrade_option_rects.append(rect)
-                
                 pygame.draw.rect(self.screen, UI_OPTION_BG_COLOR, rect, border_radius=10)
                 pygame.draw.rect(self.screen, UI_BORDER_COLOR, rect, 3, border_radius=10)
-                
                 name_text = self.ui_font.render(option_data['name'], True, WHITE)
                 name_rect = name_text.get_rect(center=(rect.centerx, rect.centery - 15))
                 self.screen.blit(name_text, name_rect)
-
                 desc_text = self.upgrade_font.render(option_data['description'], True, LIGHT_GREY)
                 desc_rect = desc_text.get_rect(center=(rect.centerx, rect.centery + 15))
                 self.screen.blit(desc_text, desc_rect)
@@ -582,7 +596,7 @@ class Game:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 200))
             self.screen.blit(overlay, (0, 0))
-            game_over_text = self.font.render("GAME OVER", True, RED)
+            game_over_text = self.header_font.render("GAME OVER", True, RED)
             game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3))
             self.screen.blit(game_over_text, game_over_rect)
             restart_text = self.ui_font.render("Press 'R' to Restart", True, WHITE)
