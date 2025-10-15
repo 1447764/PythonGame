@@ -33,8 +33,13 @@ UI_BG_COLOR = (50, 50, 80)
 UI_BORDER_COLOR = (200, 200, 255)
 UI_OPTION_BG_COLOR = (80, 80, 120)
 
-# 레벨업에 필요한 경험치 데이터
-LEVEL_DATA = [50, 75, 110, 150, 220, 300, 450, 600, 800, 1000, 1250, 1500]
+# [수정됨] 레벨업에 필요한 경험치 데이터 확장
+# LEVEL_DATA = [
+#     50, 75, 110, 150, 220, 300, 450, 600, 800, 1000, 1250, 1500,
+#     1800, 2200, 2600, 3000, 3500, 4000, 4500, 5000 
+# ]
+LEVEL_DATA = [50] * 100
+
 
 # 인게임 업그레이드 및 스킬 데이터 정의
 UPGRADE_DATA = {
@@ -46,10 +51,11 @@ UPGRADE_DATA = {
     'ACQUIRE_BIBLE': {'name': '성스러운 책 획득', 'description': '주위를 맴도는 방어용 책을 소환합니다.'},
     'BIBLE_DAMAGE': {'name': '성스러운 책 공격력 +8', 'description': '책의 공격력이 8 증가합니다.'},
     'BIBLE_COUNT': {'name': '성스러운 책 개수 +1', 'description': '책의 개수가 1개 늘어납니다.'},
-    'BIBLE_RANGE': {'name': '성스러운 책 범위 +15%', 'description': '책의 회전 반경이 15% 넓어집니다.'},
+    # [수정됨] 범위 업그레이드를 회전 속도 업그레이드로 변경
+    'BIBLE_SPEED': {'name': '성스러운 책 회전 속도 +20%', 'description': '책의 회전 속도가 20% 빨라집니다.'},
 }
 
-# [추가됨] 상점 영구 업그레이드 데이터 정의
+# 상점 영구 업그레이드 데이터 정의
 PERMANENT_UPGRADE_DATA = {
     'MAX_HP': {'name': '최대 체력 증가', 'description': '기본 최대 체력이 10 증가합니다.', 'base_cost': 100, 'cost_increase_factor': 1.5, 'max_level': 20},
     'EXP_GAIN': {'name': '경험치 획득량 증가', 'description': '경험치 획득량이 5% 증가합니다.', 'base_cost': 150, 'cost_increase_factor': 1.8, 'max_level': 10},
@@ -112,12 +118,10 @@ class Player(pygame.sprite.Sprite):
         self.bible_sprites = pygame.sprite.Group()
 
     def reset(self):
-        # [수정됨] 영구 업그레이드를 기반으로 기본 스탯 설정
         hp_bonus = self.game.permanent_upgrades.get('MAX_HP', 0) * 10
         self.base_max_hp = 100 + hp_bonus
         self.exp_gain_multiplier = 1 + (self.game.permanent_upgrades.get('EXP_GAIN', 0) * 0.05)
         self.gold_gain_multiplier = 1 + (self.game.permanent_upgrades.get('GOLD_GAIN', 0) * 0.1)
-
         self.pos.x, self.pos.y = WORLD_WIDTH / 2, WORLD_HEIGHT / 2
         self.speed = 5
         self.max_hp = self.base_max_hp
@@ -136,18 +140,20 @@ class Player(pygame.sprite.Sprite):
         for bible in self.bible_sprites: bible.kill()
 
     def gain_exp(self, amount):
-        # [수정됨] 경험치 획득량 보너스 적용
         self.exp += amount * self.exp_gain_multiplier
         if self.exp >= self.exp_to_next_level:
             self.level_up()
-
-    # ... (이하 Player 클래스의 다른 메서드들은 거의 동일) ...
+    
     def level_up(self):
         self.level += 1
         self.exp -= self.exp_to_next_level
-        if self.level - 1 < len(LEVEL_DATA): self.exp_to_next_level = LEVEL_DATA[self.level - 1]
-        else: self.exp_to_next_level = float('inf')
-        self.game.generate_upgrades(); self.game.game_state = 'LEVEL_UP'
+        if self.level - 1 < len(LEVEL_DATA):
+            self.exp_to_next_level = LEVEL_DATA[self.level - 1]
+        else:
+            self.exp_to_next_level = LEVEL_DATA[-1] + (self.level - len(LEVEL_DATA)) * 500
+        self.game.generate_upgrades() 
+        self.game.game_state = 'LEVEL_UP'
+
     def create_bibles(self):
         for sprite in self.bible_sprites: sprite.kill()
         if 'bible' in self.skills:
@@ -199,7 +205,7 @@ class Enemy(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(); self.pos = pygame.math.Vector2(0, 0)
         self.speed = random.randint(1, 2); self.max_hp = 20; self.hp = self.max_hp
         self.exp_drop = 15; self.damage = 5; self.last_skill_hit_time = 0; self.skill_hit_cooldown = 500
-        self.gold_drop = random.randint(1, 5) # [추가됨] 골드 드랍량
+        self.gold_drop = random.randint(1, 5)
 
     def reset(self, pos):
         self.pos = pygame.math.Vector2(pos); self.rect.center = self.pos
@@ -209,12 +215,10 @@ class Enemy(pygame.sprite.Sprite):
     def take_damage(self, amount):
         self.hp -= amount
         if self.hp <= 0:
-            # [수정됨] 사망 시 골드 획득
             self.game.gain_gold(self.gold_drop)
             self.game.return_enemy_to_pool(self)
             return self.rect.center
         return None
-    # ... (update 메서드는 기존과 동일) ...
     def update(self):
         player_pos = self.game.player.pos; attraction_vec = player_pos - self.pos
         separation_vec = pygame.math.Vector2(0, 0); close_enemies_count = 0
@@ -232,14 +236,12 @@ class Enemy(pygame.sprite.Sprite):
 
 # --- 경험치 보석 클래스 ---
 class ExpGem(pygame.sprite.Sprite):
-    # ... (기존과 동일) ...
     def __init__(self, pos, exp_value):
         super().__init__(); self.image = pygame.Surface((15, 15)); self.image.fill(YELLOW)
         self.rect = self.image.get_rect(center=pos); self.exp_value = exp_value
 
 # --- 투사체 클래스 ---
 class Projectile(pygame.sprite.Sprite):
-    # ... (기존과 동일) ...
     def __init__(self, game, pos, target_enemy):
         super().__init__(); self.game = game; self.image = pygame.Surface((10, 10)); self.image.fill(WHITE)
         self.pos = pygame.math.Vector2(pos); self.rect = self.image.get_rect(center=self.pos)
@@ -253,7 +255,6 @@ class Projectile(pygame.sprite.Sprite):
 
 # --- 성스러운 책 스킬 클래스 ---
 class Bible(pygame.sprite.Sprite):
-    # ... (기존과 동일) ...
     def __init__(self, game):
         super().__init__(); self.game = game; self.image = pygame.Surface((30, 40)); self.image.fill(CYAN)
         self.rect = self.image.get_rect(); self.pos = pygame.math.Vector2(0, 0)
@@ -284,9 +285,8 @@ class Game:
         self.current_upgrade_options = []
         self.upgrade_option_rects = []
         
-        self.load_game_data() # [추가됨] 게임 시작 시 데이터 불러오기
+        self.load_game_data()
 
-        # [수정됨] 시작 메뉴 및 상점 버튼
         btn_w, btn_h, btn_gap = 250, 60, 20
         btn_x = SCREEN_WIDTH / 2 - btn_w / 2
         self.start_button = Button(btn_x, 300, btn_w, btn_h, '게임 시작', self.ui_font)
@@ -296,53 +296,44 @@ class Game:
         self.back_button = Button(btn_x, SCREEN_HEIGHT - 100, btn_w, btn_h, '뒤로 가기', self.ui_font)
 
     def load_game_data(self):
-        """ [추가됨] 저장 파일에서 골드와 영구 업그레이드 정보를 불러옵니다. """
         if os.path.exists(SAVE_FILE):
-            with open(SAVE_FILE, 'r') as f:
-                data = json.load(f)
-                self.gold = data.get('gold', 0)
-                self.permanent_upgrades = data.get('permanent_upgrades', {})
+            try:
+                with open(SAVE_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.gold = data.get('gold', 0)
+                    self.permanent_upgrades = data.get('permanent_upgrades', {})
+            except (json.JSONDecodeError, FileNotFoundError):
+                self.gold = 0; self.permanent_upgrades = {}
         else:
-            self.gold = 0
-            self.permanent_upgrades = {key: 0 for key in PERMANENT_UPGRADE_DATA}
-            self.save_game_data()
+            self.gold = 0; self.permanent_upgrades = {}
+        for key in PERMANENT_UPGRADE_DATA:
+            if key not in self.permanent_upgrades: self.permanent_upgrades[key] = 0
+        self.save_game_data()
 
     def save_game_data(self):
-        """ [추가됨] 현재 골드와 영구 업그레이드 정보를 파일에 저장합니다. """
-        data = {
-            'gold': self.gold,
-            'permanent_upgrades': self.permanent_upgrades
-        }
-        with open(SAVE_FILE, 'w') as f:
-            json.dump(data, f, indent=4)
+        data = {'gold': self.gold, 'permanent_upgrades': self.permanent_upgrades}
+        with open(SAVE_FILE, 'w') as f: json.dump(data, f, indent=4)
             
     def gain_gold(self, amount):
-        """ [추가됨] 골드 획득 보너스를 적용하여 골드를 얻습니다. """
         self.gold += int(amount * self.player.gold_gain_multiplier)
 
     def run(self):
         while self.is_running:
-            self.clock.tick(FPS)
-            self.handle_events()
-            self.update()
-            self.draw()
-        self.save_game_data() # [추가됨] 게임 종료 시 데이터 저장
-        pygame.quit()
+            self.clock.tick(FPS); self.handle_events(); self.update(); self.draw()
+        self.save_game_data(); pygame.quit()
 
     def new_game(self):
-        # ... (기존과 동일) ...
         self.all_sprites = pygame.sprite.Group(); self.enemies = pygame.sprite.Group()
         self.projectiles = pygame.sprite.Group(); self.exp_gems = pygame.sprite.Group()
         self.skill_sprites = pygame.sprite.Group(); self.enemy_pool = []
         self.spawn_timer = 0; self.spawn_interval = 500; self.game_state = 'PLAYING'
         self.game_start_time = pygame.time.get_ticks(); self.paused_time = 0
+        self.kill_count = 0
         if not hasattr(self, 'player'): self.player = Player(self)
         self.player.reset(); self.all_sprites.add(self.player)
         self.camera = Camera(WORLD_WIDTH, WORLD_HEIGHT)
-        self.background_image = self.create_background()
-        self.background_rect = self.background_image.get_rect()
+        self.background_image = self.create_background(); self.background_rect = self.background_image.get_rect()
 
-    # ... (나머지 메서드들은 크게 변경되지 않았거나, draw/handle_events에서 분리됨) ...
     def generate_upgrades(self):
         upgrade_pool = list(UPGRADE_DATA.keys()); available_upgrades = []
         for key in upgrade_pool:
@@ -352,8 +343,9 @@ class Game:
                 if 'bible' not in self.player.skills: available_upgrades.append(key)
             else: available_upgrades.append(key)
         sample_size = min(3, len(available_upgrades))
-        self.current_upgrade_options = random.sample(available_upgrades, sample_size)
+        self.current_upgrade_options = random.sample(available_upgrades, sample_size) if available_upgrades else []
         self.paused_time = pygame.time.get_ticks()
+    
     def apply_upgrade(self, upgrade_key):
         if upgrade_key == 'WEAPON_DAMAGE': self.player.weapon_damage += 5
         elif upgrade_key == 'WEAPON_COOLDOWN': self.player.weapon_cooldown *= 0.9 
@@ -365,9 +357,14 @@ class Game:
             self.player.create_bibles()
         elif upgrade_key == 'BIBLE_DAMAGE': self.player.skills['bible']['damage'] += 8
         elif upgrade_key == 'BIBLE_COUNT': self.player.skills['bible']['count'] += 1; self.player.create_bibles()
-        elif upgrade_key == 'BIBLE_RANGE': self.player.skills['bible']['range'] *= 1.15; self.player.create_bibles()
+        # [수정됨] 범위 업그레이드를 회전 속도 업그레이드로 변경
+        elif upgrade_key == 'BIBLE_SPEED':
+            self.player.skills['bible']['speed'] *= 1.20 # 20% 증가
+            self.player.create_bibles() # 속도가 바뀌었으니 다시 생성
         pause_duration = pygame.time.get_ticks() - self.paused_time; self.game_start_time += pause_duration
+    
     def return_enemy_to_pool(self, enemy): enemy.kill(); self.enemy_pool.append(enemy)
+    
     def manage_enemy_spawning(self):
         self.spawn_timer += self.clock.get_time()
         if self.spawn_timer > self.spawn_interval:
@@ -378,6 +375,7 @@ class Game:
                 x = max(0, min(x, WORLD_WIDTH)); y = max(0, min(y, WORLD_HEIGHT))
                 enemy = self.enemy_pool.pop() if self.enemy_pool else Enemy(self)
                 enemy.reset((x, y))
+    
     def create_background(self):
         background = pygame.Surface((WORLD_WIDTH, WORLD_HEIGHT)); background.fill(DARK_GREY)
         tile_size = 100
@@ -397,10 +395,9 @@ class Game:
             
             elif self.game_state == 'SHOP':
                 if self.back_button.handle_event(event): self.game_state = 'START_MENU'
-                # [추가됨] 상점 업그레이드 버튼 클릭 처리
-                for upgrade_key, (rect, _) in self.shop_buttons.items():
-                    if rect.collidepoint(event.pos) and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                        self.purchase_permanent_upgrade(upgrade_key)
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    for upgrade_key, (rect, _) in self.shop_buttons.items():
+                        if rect.collidepoint(event.pos): self.purchase_permanent_upgrade(upgrade_key)
 
             elif self.game_state == 'CREDITS':
                 if self.back_button.handle_event(event): self.game_state = 'START_MENU'
@@ -413,36 +410,33 @@ class Game:
                             self.apply_upgrade(self.current_upgrade_options[i]); self.game_state = 'PLAYING'; break
     
     def purchase_permanent_upgrade(self, upgrade_key):
-        """ [추가됨] 영구 업그레이드를 구매하는 로직 """
         data = PERMANENT_UPGRADE_DATA[upgrade_key]
         current_level = self.permanent_upgrades.get(upgrade_key, 0)
-        
         if current_level < data['max_level']:
             cost = int(data['base_cost'] * (data['cost_increase_factor'] ** current_level))
             if self.gold >= cost:
-                self.gold -= cost
-                self.permanent_upgrades[upgrade_key] = current_level + 1
-                self.save_game_data()
-                print(f"{data['name']} 구매! 현재 레벨: {self.permanent_upgrades[upgrade_key]}")
-            else:
-                print("골드가 부족합니다.")
-        else:
-            print("최대 레벨에 도달했습니다.")
-
+                self.gold -= cost; self.permanent_upgrades[upgrade_key] = current_level + 1; self.save_game_data()
+            else: print("골드가 부족합니다.")
+        else: print("최대 레벨에 도달했습니다.")
 
     def update(self):
         if self.game_state == 'PLAYING':
             self.all_sprites.update(); self.camera.update(self.player); self.manage_enemy_spawning()
+            # 투사체 vs 적
             hits = pygame.sprite.groupcollide(self.enemies, self.projectiles, False, True)
             for enemy, projectiles_hit in hits.items():
                 for proj in projectiles_hit:
                     if gem_pos := enemy.take_damage(proj.damage):
+                        self.kill_count += 1
                         gem = ExpGem(gem_pos, enemy.exp_drop); self.all_sprites.add(gem); self.exp_gems.add(gem)
+            # 플레이어 vs 적
             if not self.player.invincible:
                 if colliding_enemies := pygame.sprite.spritecollide(self.player, self.enemies, False):
                     self.player.take_damage(colliding_enemies[0].damage)
+            # 플레이어 vs 경험치 보석
             gems_collected = pygame.sprite.spritecollide(self.player, self.exp_gems, True)
             for gem in gems_collected: self.player.gain_exp(gem.exp_value)
+            # 스킬 vs 적
             skill_hits = pygame.sprite.groupcollide(self.enemies, self.skill_sprites, False, False)
             for enemy, skills_hit in skill_hits.items():
                 now = pygame.time.get_ticks()
@@ -451,6 +445,7 @@ class Game:
                     if isinstance(skills_hit[0], Bible):
                         damage = self.player.skills['bible']['damage']
                         if gem_pos := enemy.take_damage(damage):
+                            self.kill_count += 1
                             gem = ExpGem(gem_pos, enemy.exp_drop); self.all_sprites.add(gem); self.exp_gems.add(gem)
 
     def draw(self):
@@ -469,13 +464,11 @@ class Game:
         gold_rect = gold_text.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT - 50)); self.screen.blit(gold_text, gold_rect)
 
     def draw_shop_screen(self):
-        """ [추가됨] 상점 UI를 그립니다. """
         self.screen.fill(DARK_GREY)
         title_text = self.header_font.render("상점", True, WHITE)
         title_rect = title_text.get_rect(center=(SCREEN_WIDTH/2, 80)); self.screen.blit(title_text, title_rect)
         gold_text = self.ui_font.render(f"소유 골드: {self.gold} G", True, YELLOW)
         gold_rect = gold_text.get_rect(center=(SCREEN_WIDTH/2, 140)); self.screen.blit(gold_text, gold_rect)
-
         self.shop_buttons = {}
         item_width, item_height, item_gap = 800, 80, 20
         start_y = 200
@@ -483,33 +476,22 @@ class Game:
             y = start_y + i * (item_height + item_gap)
             item_rect = pygame.Rect(SCREEN_WIDTH/2 - item_width/2, y, item_width, item_height)
             pygame.draw.rect(self.screen, UI_BG_COLOR, item_rect, border_radius=10)
-            
             level = self.permanent_upgrades.get(key, 0)
             name_text = self.ui_font.render(f"{data['name']} (Lv.{level}/{data['max_level']})", True, WHITE)
             self.screen.blit(name_text, (item_rect.x + 20, item_rect.y + 10))
-            
             desc_text = self.small_font.render(data['description'], True, LIGHT_GREY)
             self.screen.blit(desc_text, (item_rect.x + 20, item_rect.y + 45))
-
-            if level < data['max_level']:
-                cost = int(data['base_cost'] * (data['cost_increase_factor'] ** level))
-                cost_text = f"{cost} G"
-            else:
-                cost_text = "MAX"
-            
+            cost_text = "MAX" if level >= data['max_level'] else f"{int(data['base_cost'] * (data['cost_increase_factor'] ** level))} G"
             purchase_btn_rect = pygame.Rect(item_rect.right - 140, item_rect.y + 15, 120, 50)
             self.shop_buttons[key] = (purchase_btn_rect, cost_text)
-            
-            btn_color = UI_OPTION_BG_COLOR if cost_text != "MAX" and self.gold >= cost else DARK_GREY
+            cost = int(data['base_cost'] * (data['cost_increase_factor'] ** level)) if level < data['max_level'] else float('inf')
+            btn_color = UI_OPTION_BG_COLOR if self.gold >= cost else DARK_GREY
             pygame.draw.rect(self.screen, btn_color, purchase_btn_rect, border_radius=10)
-            cost_surf = self.ui_font.render(cost_text, True, YELLOW if cost_text != "MAX" else WHITE)
-            cost_rect = cost_surf.get_rect(center=purchase_btn_rect.center)
-            self.screen.blit(cost_surf, cost_rect)
-
+            cost_surf = self.ui_font.render(cost_text, True, YELLOW if self.gold >= cost else WHITE)
+            cost_rect = cost_surf.get_rect(center=purchase_btn_rect.center); self.screen.blit(cost_surf, cost_rect)
         self.back_button.draw(self.screen)
 
     def draw_credits_screen(self):
-        # ... (기존과 동일) ...
         self.screen.fill(DARK_GREY); credits_text = self.header_font.render("제작진", True, WHITE)
         credits_rect = credits_text.get_rect(center=(SCREEN_WIDTH/2, 150)); self.screen.blit(credits_text, credits_rect)
         creator_text = self.ui_font.render("Created by Gemini with YOU", True, WHITE)
@@ -524,19 +506,28 @@ class Game:
         self.draw_game_ui()
         
     def draw_game_ui(self):
-        # ... (기존과 동일) ...
+        # EXP 바
         exp_bar_width = SCREEN_WIDTH - 40; exp_bar_height = 20
-        exp_ratio = self.player.exp / self.player.exp_to_next_level
+        if self.player.exp_to_next_level > 0: exp_ratio = self.player.exp / self.player.exp_to_next_level
+        else: exp_ratio = 1
         current_exp_width = exp_bar_width * exp_ratio
         pygame.draw.rect(self.screen, UI_BG_COLOR, (20, 20, exp_bar_width, exp_bar_height))
         pygame.draw.rect(self.screen, YELLOW, (20, 20, current_exp_width, exp_bar_height))
         pygame.draw.rect(self.screen, UI_BORDER_COLOR, (20, 20, exp_bar_width, exp_bar_height), 3)
         level_text = self.ui_font.render(f"LV {self.player.level}", True, WHITE)
         self.screen.blit(level_text, (30, 45))
+        # 타이머
         elapsed_ticks = self.paused_time - self.game_start_time if self.game_state != 'PLAYING' else pygame.time.get_ticks() - self.game_start_time
         elapsed_seconds = elapsed_ticks // 1000; minutes, seconds = divmod(elapsed_seconds, 60)
         timer_text = self.ui_font.render(f"{minutes:02}:{seconds:02}", True, WHITE)
         timer_rect = timer_text.get_rect(center=(SCREEN_WIDTH / 2, 60)); self.screen.blit(timer_text, timer_rect)
+        
+        # 처치 수 표시
+        kill_text = self.ui_font.render(f"처치: {self.kill_count}", True, WHITE)
+        kill_rect = kill_text.get_rect(topright=(SCREEN_WIDTH - 30, 45))
+        self.screen.blit(kill_text, kill_rect)
+
+        # 레벨업 / 게임 오버 창
         if self.game_state == 'LEVEL_UP':
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); self.screen.blit(overlay, (0, 0))
             title_text = self.header_font.render("LEVEL UP!", True, YELLOW)
@@ -554,6 +545,7 @@ class Game:
                 name_rect = name_text.get_rect(center=(rect.centerx, rect.centery - 15)); self.screen.blit(name_text, name_rect)
                 desc_text = self.upgrade_font.render(option_data['description'], True, LIGHT_GREY)
                 desc_rect = desc_text.get_rect(center=(rect.centerx, rect.centery + 15)); self.screen.blit(desc_text, desc_rect)
+
         elif self.game_state == 'GAME_OVER':
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 200)); self.screen.blit(overlay, (0, 0))
             game_over_text = self.header_font.render("GAME OVER", True, RED)
