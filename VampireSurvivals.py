@@ -44,11 +44,7 @@ UI_BG_COLOR = (50, 50, 80)
 UI_BORDER_COLOR = (200, 200, 255)
 UI_OPTION_BG_COLOR = (80, 80, 120)
 
-# [수정됨] 레벨업에 필요한 경험치 데이터 확장
-# LEVEL_DATA = [
-#     50, 75, 110, 150, 220, 300, 450, 600, 800, 1000, 1250, 1500,
-#     1800, 2200, 2600, 3000, 3500, 4000, 4500, 5000 
-# ]
+# 레벨업에 필요한 경험치 데이터 확장
 LEVEL_DATA = [50] * 100
 
 
@@ -62,7 +58,6 @@ UPGRADE_DATA = {
     'ACQUIRE_BIBLE': {'name': '성스러운 책 획득', 'description': '주위를 맴도는 방어용 책을 소환합니다.'},
     'BIBLE_DAMAGE': {'name': '성스러운 책 공격력 +8', 'description': '책의 공격력이 8 증가합니다.'},
     'BIBLE_COUNT': {'name': '성스러운 책 개수 +1', 'description': '책의 개수가 1개 늘어납니다.'},
-    # [수정됨] 범위 업그레이드를 회전 속도 업그레이드로 변경
     'BIBLE_SPEED': {'name': '성스러운 책 회전 속도 +20%', 'description': '책의 회전 속도가 20% 빨라집니다.'},
 }
 
@@ -103,7 +98,6 @@ class Button:
 
 # --- 카메라 클래스 ---
 class Camera:
-    # ... (기존과 동일) ...
     def __init__(self, world_width, world_height):
         self.rect = pygame.Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
         self.world_width = world_width
@@ -183,10 +177,17 @@ class Player(pygame.sprite.Sprite):
             dist = self.pos.distance_to(enemy.pos)
             if dist < closest_dist: closest_dist = dist; closest_enemy = enemy
         return closest_enemy
+        
     def take_damage(self, amount):
         if not self.invincible:
-            self.hp -= amount; self.invincible = True; self.last_hit_time = pygame.time.get_ticks()
-            if self.hp <= 0: self.hp = 0; self.game.game_state = 'GAME_OVER'
+            self.hp -= amount
+            self.invincible = True
+            self.last_hit_time = pygame.time.get_ticks()
+            if self.hp <= 0:
+                self.hp = 0
+                self.game.game_state = 'GAME_OVER'
+                self.game.paused_time = pygame.time.get_ticks() # [추가] 게임 오버된 시간을 기록
+
     def update(self):
         if self.invincible and pygame.time.get_ticks() - self.last_hit_time > self.invincible_duration: self.invincible = False
         vel = pygame.math.Vector2(0, 0)
@@ -306,6 +307,15 @@ class Game:
         self.quit_button = Button(btn_x, 300 + (btn_h + btn_gap) * 3, btn_w, btn_h, '나가기', self.ui_font)
         self.back_button = Button(btn_x, SCREEN_HEIGHT - 100, btn_w, btn_h, '뒤로 가기', self.ui_font)
 
+        # [추가] 일시정지 메뉴 버튼
+        self.resume_button = Button(btn_x, 350, btn_w, btn_h, '계속하기', self.ui_font)
+        self.pause_main_menu_button = Button(btn_x, 350 + btn_h + btn_gap, btn_w, btn_h, '메인 화면', self.ui_font)
+
+        # [추가] 게임 오버 메뉴 버튼
+        self.restart_button = Button(btn_x, 350, btn_w, btn_h, '새 게임', self.ui_font)
+        self.game_over_main_menu_button = Button(btn_x, 350 + btn_h + btn_gap, btn_w, btn_h, '메인 화면', self.ui_font)
+
+
     def load_game_data(self):
         if os.path.exists(SAVE_FILE):
             try:
@@ -368,10 +378,9 @@ class Game:
             self.player.create_bibles()
         elif upgrade_key == 'BIBLE_DAMAGE': self.player.skills['bible']['damage'] += 8
         elif upgrade_key == 'BIBLE_COUNT': self.player.skills['bible']['count'] += 1; self.player.create_bibles()
-        # [수정됨] 범위 업그레이드를 회전 속도 업그레이드로 변경
         elif upgrade_key == 'BIBLE_SPEED':
-            self.player.skills['bible']['speed'] *= 1.20 # 20% 증가
-            self.player.create_bibles() # 속도가 바뀌었으니 다시 생성
+            self.player.skills['bible']['speed'] *= 1.20 
+            self.player.create_bibles() 
         pause_duration = pygame.time.get_ticks() - self.paused_time; self.game_start_time += pause_duration
     
     def return_enemy_to_pool(self, enemy): enemy.kill(); self.enemy_pool.append(enemy)
@@ -398,6 +407,12 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT: self.is_running = False
             
+            # [추가] 게임 플레이 중 ESC 누르면 일시정지
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE and self.game_state == 'PLAYING':
+                    self.game_state = 'PAUSED'
+                    self.paused_time = pygame.time.get_ticks() # 일시정지 시작 시간 기록
+            
             if self.game_state == 'START_MENU':
                 if self.start_button.handle_event(event): self.new_game()
                 if self.shop_button.handle_event(event): self.game_state = 'SHOP'
@@ -412,8 +427,24 @@ class Game:
 
             elif self.game_state == 'CREDITS':
                 if self.back_button.handle_event(event): self.game_state = 'START_MENU'
+            
+            # [추가] 일시정지 메뉴 이벤트 처리
+            elif self.game_state == 'PAUSED':
+                if self.resume_button.handle_event(event):
+                    # 일시정지된 시간만큼 게임 시작 시간을 보정
+                    pause_duration = pygame.time.get_ticks() - self.paused_time
+                    self.game_start_time += pause_duration
+                    self.game_state = 'PLAYING'
+                if self.pause_main_menu_button.handle_event(event):
+                    self.game_state = 'START_MENU'
+
+            # [수정] 게임 오버 시 R키 대신 버튼 사용
             elif self.game_state == 'GAME_OVER':
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_r: self.new_game()
+                if self.restart_button.handle_event(event):
+                    self.new_game()
+                if self.game_over_main_menu_button.handle_event(event):
+                    self.game_state = 'START_MENU'
+
             elif self.game_state == 'LEVEL_UP':
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     for i, rect in enumerate(self.upgrade_option_rects):
@@ -463,7 +494,8 @@ class Game:
         if self.game_state == 'START_MENU': self.draw_start_menu()
         elif self.game_state == 'SHOP': self.draw_shop_screen()
         elif self.game_state == 'CREDITS': self.draw_credits_screen()
-        elif self.game_state in ['PLAYING', 'LEVEL_UP', 'GAME_OVER']: self.draw_game_screen()
+        # [수정] PAUSED 상태일 때도 draw_game_screen() 호출
+        elif self.game_state in ['PLAYING', 'LEVEL_UP', 'GAME_OVER', 'PAUSED']: self.draw_game_screen()
         pygame.display.flip()
         
     def draw_start_menu(self):
@@ -538,7 +570,7 @@ class Game:
         kill_rect = kill_text.get_rect(topright=(SCREEN_WIDTH - 30, 45))
         self.screen.blit(kill_text, kill_rect)
 
-        # 레벨업 / 게임 오버 창
+        # [수정] 레벨업 / 게임 오버 / 일시정지 창 로직 통합
         if self.game_state == 'LEVEL_UP':
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); self.screen.blit(overlay, (0, 0))
             title_text = self.header_font.render("LEVEL UP!", True, YELLOW)
@@ -561,10 +593,19 @@ class Game:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 200)); self.screen.blit(overlay, (0, 0))
             game_over_text = self.header_font.render("GAME OVER", True, RED)
             game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3)); self.screen.blit(game_over_text, game_over_rect)
-            restart_text = self.ui_font.render("Press 'R' to Restart", True, WHITE)
-            restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)); self.screen.blit(restart_text, restart_rect)
+            # 'R'키 안내 문구 대신 버튼을 그림
+            self.restart_button.draw(self.screen)
+            self.game_over_main_menu_button.draw(self.screen)
+
+        # [추가] 일시정지 메뉴 그리기
+        elif self.game_state == 'PAUSED':
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 180)); self.screen.blit(overlay, (0, 0))
+            pause_text = self.header_font.render("PAUSED", True, WHITE)
+            pause_rect = pause_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3)); self.screen.blit(pause_text, pause_rect)
+            self.resume_button.draw(self.screen)
+            self.pause_main_menu_button.draw(self.screen)
+
 
 if __name__ == '__main__':
     game = Game()
     game.run()
-
