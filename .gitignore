@@ -1,0 +1,17 @@
+build/VampireSurvivals/Analysis-00.toc
+build/VampireSurvivals/base_library.zip
+build/VampireSurvivals/EXE-00.toc
+build/VampireSurvivals/localpycs/pyimod01_archive.pyc
+build/VampireSurvivals/localpycs/pyimod02_importers.pyc
+build/VampireSurvivals/localpycs/pyimod03_ctypes.pyc
+build/VampireSurvivals/localpycs/pyimod04_pywin32.pyc
+build/VampireSurvivals/localpycs/struct.pyc
+build/VampireSurvivals/PKG-00.toc
+build/VampireSurvivals/PYZ-00.pyz
+build/VampireSurvivals/PYZ-00.toc
+build/VampireSurvivals/VampireSurvivals.pkg
+build/VampireSurvivals/warn-VampireSurvivals.txt
+build/VampireSurvivals/xref-VampireSurvivals.html
+dist/save_data.json
+dist/VampireSurvivals.exe
+VampireSurvivals.spec

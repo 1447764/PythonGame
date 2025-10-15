@@ -3,6 +3,17 @@ import random
 import math
 import json
 import os
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 # --- 상수 정의 ---
 # 화면 크기
@@ -274,7 +285,7 @@ class Game:
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.is_running = True
-        font_path = "GmarketSansTTF/GmarketSansTTFMedium.ttf"
+        font_path = resource_path("GmarketSansTTF/GmarketSansTTFMedium.ttf")
         self.title_font = pygame.font.Font(font_path, 96)
         self.header_font = pygame.font.Font(font_path, 72)
         self.ui_font = pygame.font.Font(font_path, 36)
@@ -494,7 +505,7 @@ class Game:
     def draw_credits_screen(self):
         self.screen.fill(DARK_GREY); credits_text = self.header_font.render("제작진", True, WHITE)
         credits_rect = credits_text.get_rect(center=(SCREEN_WIDTH/2, 150)); self.screen.blit(credits_text, credits_rect)
-        creator_text = self.ui_font.render("Created by Gemini with YOU", True, WHITE)
+        creator_text = self.ui_font.render("Created by MHA", True, WHITE)
         creator_rect = creator_text.get_rect(center=(SCREEN_WIDTH/2, 350)); self.screen.blit(creator_text, creator_rect)
         self.back_button.draw(self.screen)
 
