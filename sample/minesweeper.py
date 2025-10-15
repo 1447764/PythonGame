@@ -193,5 +193,5 @@ if __name__ == "__main__":
     # 초급: 10, 10, 10
     # 중급: 16, 16, 40
     # 고급: 30, 16, 99
-    game = Minesweeper(root, width=10, height=10, mines=10)
+    game = Minesweeper(root, width=30, height=16, mines=99)
     root.mainloop()
