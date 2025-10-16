@@ -148,6 +148,7 @@ class Player(pygame.sprite.Sprite):
         self.exp += amount * self.exp_gain_multiplier
         if self.exp >= self.exp_to_next_level:
             self.level_up()
+            self.exp = 0
     
     def level_up(self):
         self.level += 1

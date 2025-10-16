@@ -15,3 +15,4 @@ build/VampireSurvivals/xref-VampireSurvivals.html
 dist/save_data.json
 dist/VampireSurvivals.exe
 VampireSurvivals.spec
+save_data.json
