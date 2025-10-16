@@ -107,6 +107,7 @@ class Skill:
         if 'side_effect' in data:
             method_name = data['side_effect']
             if hasattr(self, method_name): getattr(self, method_name)()
+        self.exp = 0
     def get_upgrade_options(self): raise NotImplementedError
     def on_remove(self): pass
 
@@ -159,16 +160,13 @@ class Button:
         self.rect, self.text, self.font = pygame.Rect(x, y, w, h), text, font
         self.bg_color, self.border_color, self.is_hovered = bg, border, False
     def draw(self, surface):
+        self.is_hovered = self.rect.collidepoint(pygame.mouse.get_pos())
         color = tuple(min(c + 30, 255) for c in self.bg_color) if self.is_hovered else self.bg_color
         pygame.draw.rect(surface, color, self.rect, border_radius=10)
         pygame.draw.rect(surface, self.border_color, self.rect, 3, border_radius=10)
         text_surf = self.font.render(self.text, True, WHITE)
         surface.blit(text_surf, text_surf.get_rect(center=self.rect.center))
-    
-    # [수정] 버튼 클릭 판정 로직 개선
     def handle_event(self, event):
-        if event.type == pygame.MOUSEMOTION:
-            self.is_hovered = self.rect.collidepoint(event.pos)
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 return True
@@ -202,6 +200,12 @@ class Player(pygame.sprite.Sprite):
         self.hp = self.max_hp
         self.level, self.exp, self.exp_to_next_level = 1, 0, LEVEL_DATA[0]
         self.invincible, self.invincible_duration, self.last_hit_time = False, 1000, 0
+        
+        # [추가] 접촉 피해 관련 속성
+        self.contact_damage_cooldown = 1000 # 1초
+        self.last_contact_damage_time = 0
+        self.is_in_contact_with_enemy = False
+
         if hasattr(self, 'skills'):
             for skill in self.skills.values(): skill.on_remove()
         self.skills = {}
@@ -213,8 +217,6 @@ class Player(pygame.sprite.Sprite):
         self.level += 1; self.exp -= self.exp_to_next_level
         self.exp_to_next_level = LEVEL_DATA[min(self.level - 1, len(LEVEL_DATA) - 1)]
         self.game.generate_upgrades(); self.game.game_state = 'LEVEL_UP'
-        self.exp = 0
-
     def find_closest_enemy(self):
         closest_dist_sq, closest_enemy = float('inf'), None
         if not self.game.enemies: return None
@@ -222,15 +224,28 @@ class Player(pygame.sprite.Sprite):
             dist_sq = self.pos.distance_squared_to(enemy.pos)
             if dist_sq < closest_dist_sq: closest_dist_sq, closest_enemy = dist_sq, enemy
         return closest_enemy
-    def take_damage(self, amount):
-        if not self.invincible:
+    
+    # [추가] 모든 체력 감소 및 사망 처리를 담당하는 내부 메소드
+    def _apply_damage(self, amount):
+        if self.hp > 0:
             self.hp -= amount
-            self.invincible, self.last_hit_time = True, pygame.time.get_ticks()
             if self.hp <= 0:
                 self.hp = 0
                 self.game.game_state = 'GAME_OVER'
                 self.game.gold += self.game.session_gold
                 self.game.save_game_data()
+
+    # [수정] 투사체 등 일회성 피해용 메소드 (무적 부여)
+    def take_projectile_damage(self, amount):
+        if not self.invincible:
+            self._apply_damage(amount)
+            if self.hp > 0:
+                 self.invincible, self.last_hit_time = True, pygame.time.get_ticks()
+
+    # [추가] 접촉 피해용 메소드 (무적 부여 안함)
+    def take_contact_damage(self, amount):
+        self._apply_damage(amount)
+
     def update(self):
         if self.invincible and pygame.time.get_ticks() - self.last_hit_time > self.invincible_duration:
             self.invincible = False
@@ -258,7 +273,7 @@ class Enemy(pygame.sprite.Sprite):
         self.image = pygame.Surface((40, 40)); self.image.fill(RED); self.rect = self.image.get_rect()
         self.pos = pygame.math.Vector2(0, 0)
         self.speed, self.max_hp, self.hp = random.randint(1, 2), 20, 20
-        self.exp_drop, self.damage, self.skill_hit_cooldown, self.last_skill_hit_time = 15, 5, 500, 0
+        self.exp_drop, self.contact_damage, self.skill_hit_cooldown, self.last_skill_hit_time = 15, 5, 500, 0
         self.gold_drop = random.randint(1, 5)
     def reset(self, pos):
         self.pos.xy = pos; self.rect.center = self.pos
@@ -325,6 +340,11 @@ class Game:
         self.resume_button = Button(btn_x, 250, btn_w, btn_h, '계속하기', self.ui_font)
         self.main_menu_button = Button(btn_x, 250 + btn_h + btn_gap, btn_w, btn_h, '메인 메뉴', self.ui_font)
         self.quit_from_pause_button = Button(btn_x, 250 + (btn_h + btn_gap)*2, btn_w, btn_h, '게임 종료', self.ui_font)
+        
+        # [추가] 게임 오버 화면 버튼
+        self.restart_button = Button(btn_x, SCREEN_HEIGHT/2 - btn_h, btn_w, btn_h, '다시 시작', self.ui_font)
+        self.game_over_main_menu_button = Button(btn_x, SCREEN_HEIGHT/2 + btn_gap, btn_w, btn_h, '메인 메뉴', self.ui_font)
+        
         self.shop_buttons = {}
 
     def load_game_data(self):
@@ -393,18 +413,9 @@ class Game:
         pause_duration = pygame.time.get_ticks() - self.paused_time
         self.game_start_time += pause_duration
         self.game_state = 'PLAYING'
-    
-    # [추가] 메인 메뉴 복귀 및 게임 정리 함수
     def return_to_main_menu(self):
-        self.all_sprites = None
-        self.enemies = None
-        self.projectiles = None
-        self.exp_gems = None
-        self.skill_sprites = None
-        self.enemy_pool = None
-        self.quadtree = None
+        self.all_sprites, self.enemies, self.projectiles, self.exp_gems, self.skill_sprites, self.enemy_pool, self.quadtree = (None,)*7
         self.game_state = 'START_MENU'
-
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: self.is_running = False
@@ -424,7 +435,8 @@ class Game:
             elif self.game_state == 'CREDITS':
                 if self.back_button.handle_event(event): self.game_state = 'START_MENU'
             elif self.game_state == 'GAME_OVER':
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_r: self.new_game()
+                if self.restart_button.handle_event(event): self.new_game()
+                if self.game_over_main_menu_button.handle_event(event): self.return_to_main_menu()
             elif self.game_state == 'LEVEL_UP':
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     for i, rect in enumerate(self.upgrade_option_rects):
@@ -443,16 +455,36 @@ class Game:
             self.quadtree.clear()
             for enemy in self.enemies: self.quadtree.insert(enemy)
             self.all_sprites.update(); self.camera.update(self.player); self.manage_enemy_spawning()
+            
+            # 투사체와 적 충돌 처리
             hits = pygame.sprite.groupcollide(self.enemies, self.projectiles, False, True)
             for enemy, projs in hits.items():
                 for proj in projs:
                     if gem_pos := enemy.take_damage(proj.damage):
                         self.kill_count += 1; gem = ExpGem(gem_pos, enemy.exp_drop)
                         self.all_sprites.add(gem); self.exp_gems.add(gem)
-            if not self.player.invincible:
-                if enemies := pygame.sprite.spritecollide(self.player, self.enemies, False):
-                    self.player.take_damage(enemies[0].damage)
+            
+            # [수정] 새로운 접촉 피해 로직
+            colliding_enemies = pygame.sprite.spritecollide(self.player, self.enemies, False)
+            if colliding_enemies:
+                if not self.player.is_in_contact_with_enemy: # 첫 충돌
+                    self.player.is_in_contact_with_enemy = True
+                    damage = 5 + len(colliding_enemies) # 기본 피해 + 닿은 적 수
+                    self.player.take_contact_damage(damage)
+                    self.player.last_contact_damage_time = pygame.time.get_ticks()
+                else: # 지속 충돌
+                    now = pygame.time.get_ticks()
+                    if now - self.player.last_contact_damage_time > self.player.contact_damage_cooldown:
+                        damage = 5 + len(colliding_enemies)
+                        self.player.take_contact_damage(damage)
+                        self.player.last_contact_damage_time = now
+            else:
+                self.player.is_in_contact_with_enemy = False
+
+            # 경험치 젬 획득
             for gem in pygame.sprite.spritecollide(self.player, self.exp_gems, True): self.player.gain_exp(gem.exp_value)
+            
+            # 스킬과 적 충돌 처리
             skill_hits = pygame.sprite.groupcollide(self.enemies, self.skill_sprites, False, False)
             for enemy, skills in skill_hits.items():
                 now = pygame.time.get_ticks()
@@ -466,7 +498,9 @@ class Game:
         if self.game_state == 'START_MENU': self.draw_start_menu()
         elif self.game_state == 'SHOP': self.draw_shop_screen()
         elif self.game_state == 'CREDITS': self.draw_credits_screen()
-        elif self.game_state in ['PLAYING', 'LEVEL_UP', 'GAME_OVER', 'PAUSED']: self.draw_game_screen()
+        elif self.game_state in ['PLAYING', 'LEVEL_UP', 'GAME_OVER', 'PAUSED']:
+            if self.all_sprites: self.draw_game_screen()
+            else: self.draw_start_menu() # 게임 종료 후 리소스 정리됐을 때 대비
         pygame.display.flip()
     def draw_start_menu(self):
         self.screen.fill(DARK_GREY)
@@ -539,8 +573,8 @@ class Game:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0,0,0,200))
             self.screen.blit(overlay, (0, 0)); title = self.header_font.render("GAME OVER", True, RED)
             self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/3)))
-            restart = self.ui_font.render("Press 'R' to Restart", True, WHITE)
-            self.screen.blit(restart, restart.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2)))
+            self.restart_button.draw(self.screen)
+            self.game_over_main_menu_button.draw(self.screen)
         elif self.game_state == 'PAUSED':
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0,0,0,180))
             self.screen.blit(overlay, (0, 0)); title = self.header_font.render("PAUSED", True, WHITE)

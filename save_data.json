@@ -1,8 +1,8 @@
 {
-    "gold": 280,
+    "gold": 164,
     "permanent_upgrades": {
         "MAX_HP": 4,
-        "EXP_GAIN": 2,
+        "EXP_GAIN": 3,
         "GOLD_GAIN": 1
     }
 }
