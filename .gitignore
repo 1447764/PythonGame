@@ -16,3 +16,4 @@ dist/save_data.json
 dist/VampireSurvivals.exe
 VampireSurvivals.spec
 venv
+save_data.json
